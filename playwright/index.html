@@ -1,6 +1,12 @@
 <!DOCTYPE html>
 <html><head><title>playwright</title>
-<style>body{font-family:monospace;background:#0a0a0a;color:#e0e0e0;max-width:600px;margin:2rem auto;padding:1rem}a{color:#00ff88}</style>
+<style>
+:root{--bg:#0a0a0a;--fg:#e0e0e0;--accent:#00ff88}
+:root.light{--bg:#fdf6e3;--fg:#657b83;--accent:#859900}
+body{font-family:monospace;background:var(--bg);color:var(--fg);max-width:600px;margin:2rem auto;padding:1rem}
+a{color:var(--accent)}h1{color:var(--accent)}
+</style>
+<script>const p=new URLSearchParams(location.search);if(p.get("theme")==="light")document.documentElement.classList.add("light")</script>
 </head><body>
 <h1>$ ls ./playwright</h1>
 <p><a href="../">← ..</a></p><ul>
