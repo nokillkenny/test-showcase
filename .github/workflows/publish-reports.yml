@@ -59,16 +59,34 @@ jobs:
           name: ${{ steps.info.outputs.artifact }}
           path: ${{ steps.info.outputs.dir }}/${{ steps.info.outputs.timestamp }}/
           workflow_conclusion: ''
-           
+
+      - name: Normalize report structure
+        run: |
+          DIR="${{ steps.info.outputs.dir }}/${{ steps.info.outputs.timestamp }}"
+          # Rename any .html file to index.html if no index.html exists
+          if [ ! -f "$DIR/index.html" ]; then
+            HTML_FILE=$(find "$DIR" -maxdepth 1 -name "*.html" | head -1)
+            [ -n "$HTML_FILE" ] && mv "$HTML_FILE" "$DIR/index.html"
+          fi
+
       - name: Generate index pages
         run: |
+          # Shared styles with theme support
+          STYLES='<style>
+          :root{--bg:#0a0a0a;--fg:#e0e0e0;--accent:#00ff88}
+          :root.light{--bg:#fdf6e3;--fg:#657b83;--accent:#859900}
+          body{font-family:monospace;background:var(--bg);color:var(--fg);max-width:600px;margin:2rem auto;padding:1rem}
+          a{color:var(--accent)}h1{color:var(--accent)}
+          </style>
+          <script>const p=new URLSearchParams(location.search);if(p.get("theme")==="light")document.documentElement.classList.add("light")</script>'
+
           # Root index
-          cat > index.html << 'EOF'
+          cat > index.html << EOF
           <!DOCTYPE html>
           <html><head><title>Test Reports</title>
-          <style>body{font-family:monospace;background:#0a0a0a;color:#e0e0e0;max-width:600px;margin:2rem auto;padding:1rem}a{color:#00ff88}h1{color:#00ff88}</style>
+          $STYLES
           </head><body>
-          <h1>$ ls ./reports</h1>
+          <h1>\$ ls ./reports</h1>
           <ul>
             <li><a href="playwright/">playwright/</a></li>
             <li><a href="ruby-cucumber/">ruby-cucumber/</a></li>
@@ -83,9 +101,9 @@ jobs:
             cat > "$dir/index.html" << EOF
           <!DOCTYPE html>
           <html><head><title>$dir</title>
-          <style>body{font-family:monospace;background:#0a0a0a;color:#e0e0e0;max-width:600px;margin:2rem auto;padding:1rem}a{color:#00ff88}</style>
+          $STYLES
           </head><body>
-          <h1>$ ls ./$dir</h1>
+          <h1>\$ ls ./$dir</h1>
           <p><a href="../">← ..</a></p><ul>
           EOF
             for run in $(ls -dr "$dir"/2* 2>/dev/null | head -20); do
