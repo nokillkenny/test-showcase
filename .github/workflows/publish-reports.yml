@@ -58,7 +58,8 @@ jobs:
           workflow: test.yml
           name: ${{ steps.info.outputs.artifact }}
           path: ${{ steps.info.outputs.dir }}/${{ steps.info.outputs.timestamp }}/
-
+          workflow_conclusion: ''
+           
       - name: Generate index pages
         run: |
           # Root index
