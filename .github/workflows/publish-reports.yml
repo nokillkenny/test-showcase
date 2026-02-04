@@ -6,68 +6,97 @@ on:
   workflow_dispatch:
     inputs:
       repo:
-        description: 'Source repo name'
+        description: 'Source repo (playwright-showcase, ruby-cucumber-capybara-example, codeceptjs-rest-bdd)'
         required: true
-      artifact:
-        description: 'Artifact name'
-        default: 'playwright-report'
+        type: choice
+        options:
+          - playwright-showcase
+          - ruby-cucumber-capybara-example
+          - codeceptjs-rest-bdd
 
 permissions:
   contents: write
-  pages: write
-  id-token: write
 
 jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout gh-pages
+        uses: actions/checkout@v4
         with:
           ref: gh-pages
-          fetch-depth: 0
+        continue-on-error: true
 
-      - name: Get report info
+      - name: Setup gh-pages branch
+        run: |
+          git checkout gh-pages 2>/dev/null || git checkout --orphan gh-pages
+          git reset --hard || true
+
+      - name: Map repo to directory
         id: info
         run: |
           REPO="${{ github.event.client_payload.repo || github.event.inputs.repo }}"
-          ARTIFACT="${{ github.event.client_payload.artifact || github.event.inputs.artifact }}"
-          TIMESTAMP=$(date +%Y-%m-%d-%H%M)
+          TIMESTAMP=$(date -u +%Y-%m-%d-%H%M)
+          
+          case "$REPO" in
+            playwright-showcase) DIR="playwright"; ARTIFACT="playwright-report" ;;
+            ruby-cucumber-capybara-example) DIR="ruby-cucumber"; ARTIFACT="cucumber-report" ;;
+            codeceptjs-rest-bdd) DIR="codeceptjs"; ARTIFACT="codeceptjs-report" ;;
+            *) echo "Unknown repo: $REPO"; exit 1 ;;
+          esac
+          
           echo "repo=$REPO" >> $GITHUB_OUTPUT
+          echo "dir=$DIR" >> $GITHUB_OUTPUT
           echo "artifact=$ARTIFACT" >> $GITHUB_OUTPUT
           echo "timestamp=$TIMESTAMP" >> $GITHUB_OUTPUT
-          echo "dir=$REPO/$TIMESTAMP" >> $GITHUB_OUTPUT
 
-      - name: Download artifact from source repo
+      - name: Download artifact
         uses: dawidd6/action-download-artifact@v3
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+          github_token: ${{ secrets.SHOWCASE_PAT }}
           repo: nokillkenny/${{ steps.info.outputs.repo }}
           workflow: test.yml
           name: ${{ steps.info.outputs.artifact }}
-          path: ${{ steps.info.outputs.dir }}
+          path: ${{ steps.info.outputs.dir }}/${{ steps.info.outputs.timestamp }}/
 
-      - name: Update latest symlink
+      - name: Generate index pages
         run: |
-          REPO="${{ steps.info.outputs.repo }}"
-          DIR="${{ steps.info.outputs.dir }}"
-          rm -f "$REPO/latest"
-          ln -s "$(basename $DIR)" "$REPO/latest"
+          # Root index
+          cat > index.html << 'EOF'
+          <!DOCTYPE html>
+          <html><head><title>Test Reports</title>
+          <style>body{font-family:monospace;background:#0a0a0a;color:#e0e0e0;max-width:600px;margin:2rem auto;padding:1rem}a{color:#00ff88}h1{color:#00ff88}</style>
+          </head><body>
+          <h1>$ ls ./reports</h1>
+          <ul>
+            <li><a href="playwright/">playwright/</a></li>
+            <li><a href="ruby-cucumber/">ruby-cucumber/</a></li>
+            <li><a href="codeceptjs/">codeceptjs/</a></li>
+          </ul>
+          </body></html>
+          EOF
 
-      - name: Generate index
-        run: |
-          REPO="${{ steps.info.outputs.repo }}"
-          echo "<!DOCTYPE html><html><head><title>$REPO Reports</title></head><body>" > "$REPO/index.html"
-          echo "<h1>$REPO Test Reports</h1><ul>" >> "$REPO/index.html"
-          for dir in $(ls -rd $REPO/*/); do
-            name=$(basename $dir)
-            [ "$name" != "latest" ] && echo "<li><a href=\"$name/\">$name</a></li>" >> "$REPO/index.html"
+          # Per-framework index
+          for dir in playwright ruby-cucumber codeceptjs; do
+            mkdir -p "$dir"
+            cat > "$dir/index.html" << EOF
+          <!DOCTYPE html>
+          <html><head><title>$dir</title>
+          <style>body{font-family:monospace;background:#0a0a0a;color:#e0e0e0;max-width:600px;margin:2rem auto;padding:1rem}a{color:#00ff88}</style>
+          </head><body>
+          <h1>$ ls ./$dir</h1>
+          <p><a href="../">← ..</a></p><ul>
+          EOF
+            for run in $(ls -dr "$dir"/2* 2>/dev/null | head -20); do
+              echo "<li><a href=\"$(basename $run)/\">$(basename $run)/</a></li>" >> "$dir/index.html"
+            done
+            echo '</ul></body></html>' >> "$dir/index.html"
           done
-          echo "</ul></body></html>" >> "$REPO/index.html"
 
       - name: Commit and push
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add .
-          git commit -m "Add ${{ steps.info.outputs.repo }} report ${{ steps.info.outputs.timestamp }}" || exit 0
-          git push
+          git add -A
+          git diff --staged --quiet || git commit -m "Add ${{ steps.info.outputs.dir }} report ${{ steps.info.outputs.timestamp }}"
+          git push origin gh-pages --force
