@@ -51,6 +51,7 @@ jobs:
           echo "timestamp=$TIMESTAMP" >> $GITHUB_OUTPUT
 
       - name: Download artifact
+        id: download
         uses: dawidd6/action-download-artifact@v3
         with:
           github_token: ${{ secrets.SHOWCASE_PAT }}
@@ -59,6 +60,19 @@ jobs:
           name: ${{ steps.info.outputs.artifact }}
           path: ${{ steps.info.outputs.dir }}/${{ steps.info.outputs.timestamp }}/
           workflow_conclusion: ''
+
+      - name: Get run status
+        run: |
+          DIR="${{ steps.info.outputs.dir }}/${{ steps.info.outputs.timestamp }}"
+          REPO="nokillkenny/${{ steps.info.outputs.repo }}"
+          
+          # Get latest workflow run conclusion
+          STATUS=$(gh api "repos/$REPO/actions/workflows/test.yml/runs?per_page=1" \
+            --jq '.workflow_runs[0].conclusion' 2>/dev/null || echo "unknown")
+          
+          echo "$STATUS" > "$DIR/.status"
+        env:
+          GH_TOKEN: ${{ secrets.SHOWCASE_PAT }}
 
       - name: Normalize report structure
         run: |
@@ -107,7 +121,19 @@ jobs:
           <p><a href="../">← ..</a></p><ul>
           EOF
             for run in $(ls -dr "$dir"/2* 2>/dev/null | head -20); do
-              echo "<li><a href=\"$(basename $run)/\">$(basename $run)/</a></li>" >> "$dir/index.html"
+              name=$(basename "$run")
+              status="unknown"
+              [ -f "$run/.status" ] && status=$(cat "$run/.status")
+              
+              if [ "$status" = "success" ]; then
+                indicator='<svg width="10" height="10" style="margin-right:6px"><circle cx="5" cy="5" r="4" fill="#00ff88"/></svg>'
+              elif [ "$status" = "failure" ]; then
+                indicator='<svg width="10" height="10" style="margin-right:6px"><circle cx="5" cy="5" r="4" fill="#ff5555"/></svg>'
+              else
+                indicator='<svg width="10" height="10" style="margin-right:6px"><circle cx="5" cy="5" r="4" fill="#666"/></svg>'
+              fi
+              
+              echo "<li style=\"display:flex;align-items:center\">$indicator<a href=\"$name/\">$name/</a></li>" >> "$dir/index.html"
             done
             echo '</ul></body></html>' >> "$dir/index.html"
           done
