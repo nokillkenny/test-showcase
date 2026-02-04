@@ -1,0 +1,73 @@
+name: Publish Reports
+
+on:
+  repository_dispatch:
+    types: [test-completed]
+  workflow_dispatch:
+    inputs:
+      repo:
+        description: 'Source repo name'
+        required: true
+      artifact:
+        description: 'Artifact name'
+        default: 'playwright-report'
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: gh-pages
+          fetch-depth: 0
+
+      - name: Get report info
+        id: info
+        run: |
+          REPO="${{ github.event.client_payload.repo || github.event.inputs.repo }}"
+          ARTIFACT="${{ github.event.client_payload.artifact || github.event.inputs.artifact }}"
+          TIMESTAMP=$(date +%Y-%m-%d-%H%M)
+          echo "repo=$REPO" >> $GITHUB_OUTPUT
+          echo "artifact=$ARTIFACT" >> $GITHUB_OUTPUT
+          echo "timestamp=$TIMESTAMP" >> $GITHUB_OUTPUT
+          echo "dir=$REPO/$TIMESTAMP" >> $GITHUB_OUTPUT
+
+      - name: Download artifact from source repo
+        uses: dawidd6/action-download-artifact@v3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          repo: nokillkenny/${{ steps.info.outputs.repo }}
+          workflow: test.yml
+          name: ${{ steps.info.outputs.artifact }}
+          path: ${{ steps.info.outputs.dir }}
+
+      - name: Update latest symlink
+        run: |
+          REPO="${{ steps.info.outputs.repo }}"
+          DIR="${{ steps.info.outputs.dir }}"
+          rm -f "$REPO/latest"
+          ln -s "$(basename $DIR)" "$REPO/latest"
+
+      - name: Generate index
+        run: |
+          REPO="${{ steps.info.outputs.repo }}"
+          echo "<!DOCTYPE html><html><head><title>$REPO Reports</title></head><body>" > "$REPO/index.html"
+          echo "<h1>$REPO Test Reports</h1><ul>" >> "$REPO/index.html"
+          for dir in $(ls -rd $REPO/*/); do
+            name=$(basename $dir)
+            [ "$name" != "latest" ] && echo "<li><a href=\"$name/\">$name</a></li>" >> "$REPO/index.html"
+          done
+          echo "</ul></body></html>" >> "$REPO/index.html"
+
+      - name: Commit and push
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add .
+          git commit -m "Add ${{ steps.info.outputs.repo }} report ${{ steps.info.outputs.timestamp }}" || exit 0
+          git push
